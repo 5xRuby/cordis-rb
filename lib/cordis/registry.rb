@@ -4,7 +4,7 @@ module Cordis
   # Plugin registry: keyed by the resolved callback — one Runtime per callback,
   # applying the same plugin N times = N fibers under one Runtime.
   class Registry
-    Runtime = Struct.new(:name, :callback, :fibers)
+    Runtime = Struct.new(:name, :callback, :fibers, :key)
 
     def initialize(ctx)
       @ctx = ctx
@@ -16,20 +16,21 @@ module Cordis
     def size = @store.size
     def runtimes = @store.values
 
-    # Entry point for ctx.plugin. Plugin shapes: a callable, or { apply:, inject:, name: }.
+    # Entry point for ctx.plugin. Plugin shapes: a callable, { apply:, inject:, name: },
+    # or a Class (instantiated at load time; see Cordis::Service).
     # Returns the fiber synchronously; the actual apply is deferred one tick
     # (must be called inside Sync/Async).
     def plugin(ctx, plugin, config = nil)
-      callback, inject, name = resolve(plugin)
+      key, callback, inject, name = resolve(plugin)
       ctx.fiber.assert_active
-      runtime = @store[callback] ||= Runtime.new(name, callback, [])
+      runtime = @store[key] ||= Runtime.new(name, callback, [], key)
       Fiber.new(ctx, config: config, inject: inject, runtime: runtime)
     end
 
     def remove(fiber)
       runtime = fiber.runtime
       runtime.fibers.reject! { |f| f.equal?(fiber) }
-      @store.delete(runtime.callback) if runtime.fibers.empty?
+      @store.delete(runtime.key) if runtime.fibers.empty?
     end
 
     private
@@ -41,11 +42,20 @@ module Cordis
         raise ArgumentError, "invalid plugin: apply must be callable, got #{apply.inspect}" \
           unless apply.respond_to?(:call)
 
-        [apply, normalize_inject(plugin[:inject]), plugin[:name]]
+        [apply, apply, normalize_inject(plugin[:inject]), plugin[:name]]
+      when Class
+        # class plugin (upstream isConstructor): instantiated during load; a Service
+        # subclass provides itself in #initialize, then #init runs as the load body
+        inject = plugin.respond_to?(:inject) ? plugin.inject : nil
+        callback = lambda do |c, config|
+          instance = plugin.new(c, config)
+          instance.init if instance.respond_to?(:init)
+        end
+        [plugin, callback, normalize_inject(inject), plugin.name]
       else
         raise ArgumentError, "invalid plugin: #{plugin.inspect}" unless plugin.respond_to?(:call)
 
-        [plugin, {}, nil]
+        [plugin, plugin, {}, nil]
       end
     end
 
