@@ -4,14 +4,14 @@ require 'async'
 require_relative '../lib/cordis'
 
 module AsyncHelpers
-  # 所有可能吊死的 async spec 一律包 timeout
+  # Every async spec that could hang gets wrapped in a timeout
   def with_reactor(timeout: 2, &)
     Sync do |task|
       task.with_timeout(timeout, &)
     end
   end
 
-  # 讓被延後的 load/unload transition 跑完(對應上游 test 的 await sleep())
+  # Let deferred load/unload transitions run (upstream tests' await sleep())
   def tick(count = 1)
     count.times { Async::Task.current.yield }
   end

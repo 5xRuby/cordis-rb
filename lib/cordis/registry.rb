@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 module Cordis
-  # Plugin registry:以 resolve 後的 callback 為 key,一個 callback 一個 Runtime,
-  # 同一 plugin 套用 N 次 = N 個 fiber 掛在同一 Runtime 底下。
+  # Plugin registry: keyed by the resolved callback — one Runtime per callback,
+  # applying the same plugin N times = N fibers under one Runtime.
   class Registry
     Runtime = Struct.new(:name, :callback, :fibers)
 
@@ -16,8 +16,9 @@ module Cordis
     def size = @store.size
     def runtimes = @store.values
 
-    # ctx.plugin 入口。plugin 形狀:callable,或 { apply:, inject:, name: }。
-    # 同步回傳 fiber,實際 apply 延後一個 tick(需在 Sync/Async 內呼叫)。
+    # Entry point for ctx.plugin. Plugin shapes: a callable, or { apply:, inject:, name: }.
+    # Returns the fiber synchronously; the actual apply is deferred one tick
+    # (must be called inside Sync/Async).
     def plugin(ctx, plugin, config = nil)
       callback, inject, name = resolve(plugin)
       ctx.fiber.assert_active

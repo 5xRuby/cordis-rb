@@ -3,13 +3,13 @@
 module Cordis
   class Error < StandardError; end
 
-  # 在非 active 的 context 上建立 effect / plugin / listener
+  # Raised when creating an effect / plugin / listener on a non-active context
   class InactiveEffectError < Error; end
 
-  # service 存取違規(without inject / inactive context / duplicate provide / set 違規)
+  # Service access violations (without inject / inactive context / duplicate provide / bad set)
   class ServiceError < Error; end
 
-  # parallel 的彙總錯誤(Ruby 沒有內建 AggregateError)
+  # Aggregated errors from parallel (Ruby has no built-in AggregateError)
   class AggregateError < Error
     attr_reader :errors
 

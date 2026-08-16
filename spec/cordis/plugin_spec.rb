@@ -80,14 +80,14 @@ RSpec.describe 'ctx.plugin' do
       }
       fiber = ctx.plugin(outer)
       fiber.await
-      tick # inner 的載入再延一個 tick
+      tick # the inner plugin's load is deferred one more tick
       expect(ctx.events.hooks['custom'].size).to eq(3)
       expect(ctx.registry.size).to eq(2)
 
       fiber.dispose
       expect(ctx.events.hooks['custom'].size).to eq(0)
       expect(ctx.registry.size).to eq(0)
-      expect { fiber.dispose }.not_to(change { log.size }) # 重複 dispose no-op
+      expect { fiber.dispose }.not_to(change { log.size }) # repeated dispose is a no-op
     end
   end
 
@@ -118,7 +118,7 @@ RSpec.describe 'ctx.plugin' do
       expect(log).to eq(%i[apply revert])
       expect(ctx.fiber.uid).to eq(0)
       expect(ctx.fiber.state).to eq(:active)
-      ctx.effect { -> {} } # root 仍可繼續使用
+      ctx.effect { -> {} } # root remains usable
     end
   end
 end

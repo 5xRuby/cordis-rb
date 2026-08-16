@@ -35,7 +35,7 @@ RSpec.describe 'service access' do
   end
 
   it 'reaches services provided by an ancestor fiber without inject' do
-    ctx.provide(:foo, 5) # root fiber 提供
+    ctx.provide(:foo, 5) # provided by the root fiber
     with_reactor do
       value = nil
       fiber = ctx.plugin(->(c, _config) { value = c.foo })

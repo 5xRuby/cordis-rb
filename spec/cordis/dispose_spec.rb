@@ -60,7 +60,7 @@ RSpec.describe 'effect disposal' do
     second = ctx.effect { inverse }
     first.call
     expect(log.size).to eq(1)
-    second.call # 若 first 誤刪兩份,這裡會變 no-op
+    second.call # if first wrongly removed both entries, this would be a no-op
     expect(log.size).to eq(2)
   end
 

@@ -11,12 +11,12 @@ RSpec.describe 'service injection (reactive coeffect)' do
         -> { log << [:unload] }
       end
       tick
-      expect(log).to eq([]) # 依賴未滿足 → pending
+      expect(log).to eq([]) # dependency unsatisfied -> pending
       expect(consumer.state).to eq(:pending)
 
       provider = ctx.plugin(->(c, _config) { c.provide(:foo, 42) })
       provider.await
-      tick # consumer 的 reload 再延一個 tick
+      tick # the consumer's reload is deferred one more tick
       expect(log).to eq([[:load, 42]])
       expect(consumer.state).to eq(:active)
 
@@ -32,13 +32,13 @@ RSpec.describe 'service injection (reactive coeffect)' do
       provider = ctx.plugin(lambda { |c, _config|
         c.provide(:foo, :ready)
         log << :providing
-        gate.pop # async init:provider 卡在載入中
+        gate.pop # async init: provider stuck mid-load
         log << :provider_done
       })
       ctx.inject([:foo]) { |c, _config| log << [:consumer, c.foo] }
       tick
       expect(log).to eq([:providing])
-      expect(ctx.get(:foo)).to be_nil # strict:provider 未 ACTIVE 不可見
+      expect(ctx.get(:foo)).to be_nil # strict: invisible until the provider is ACTIVE
 
       gate.push(nil)
       provider.await
@@ -66,7 +66,7 @@ RSpec.describe 'service injection (reactive coeffect)' do
       ctx.plugin(foo)
       last = ctx.plugin(qux)
       last.await
-      tick(4) # 逐層 activation
+      tick(4) # layer-by-layer activation
       expect(log).to eq(%i[qux foo bar])
       expect(ctx.get(:bar)).to eq(3)
     end
@@ -89,7 +89,7 @@ RSpec.describe 'service injection (reactive coeffect)' do
   it 'tears down dependents before the provider finishes unloading' do
     with_reactor do
       provider = ctx.plugin(lambda { |c, _config|
-        c.effect { -> { log << :provider_pre_provide } } # 在 provide 之前註冊 → 最後撤
+        c.effect { -> { log << :provider_pre_provide } } # registered before provide -> disposed last
         c.provide(:foo, 1)
       })
       provider.await

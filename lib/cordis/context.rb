@@ -1,9 +1,11 @@
 # frozen_string_literal: true
 
 module Cordis
-  # 薄殼:root bootstrap、service 存取(coeffect 的 Σ)、plugin/event 入口的委派。
-  # 破壞性變更(round 2):extend 對齊上游語意 —— 產生「同 root、不同 fiber」的 ctx 視角,
-  # 不再是新的 disposal scope;新 scope 一律來自 ctx.plugin。
+  # Thin shell: root bootstrap, service access (the paper's coeffect context), and
+  # delegation to the plugin/event entry points.
+  # Breaking change (round 2): extend now matches upstream semantics — it creates a
+  # "same root, different fiber" view of the ctx, not a new disposal scope; new scopes
+  # always come from ctx.plugin.
   class Context
     Impl = Struct.new(:name, :fiber, :value)
 
@@ -11,13 +13,13 @@ module Cordis
 
     def initialize
       @root = self
-      @services = {} # name => Impl(無 isolate,直接以 name 為 key)
-      @fiber = Fiber.new(self) # root fiber:恆 active,dispose = restart
+      @services = {} # name => Impl (no isolate layer, keyed directly by name)
+      @fiber = Fiber.new(self) # root fiber: always active, dispose = restart
       @registry = Registry.new(self)
       @events = Events.new(self)
     end
 
-    # 內部用:綁定另一個 fiber 的 ctx 視角(共用 root/registry/events/services)。
+    # Internal: a ctx view bound to another fiber (sharing root/registry/events/services).
     def extend(fiber: @fiber)
       ctx = dup
       ctx.instance_variable_set(:@fiber, fiber)
@@ -45,9 +47,10 @@ module Cordis
 
     # -- service(reactive coeffect)--
 
-    # 提供 service 本身就是一個 revertible effect。
-    # teardown 順序保證:先從 store 移除 → notify → 等所有依賴者卸載完 →
-    # 最後才刪 provider 自見的 entry(依賴者的 disposer 在 teardown 中仍可取用該 service)。
+    # Providing a service is itself a revertible effect.
+    # Teardown ordering guarantee: remove from the store -> notify -> wait for every
+    # dependent to finish unloading -> only then delete the provider's self-visible entry
+    # (so dependents' disposers can still reach the service during their own teardown).
     def provide(name, value = nil)
       name = name.to_sym
       owner = @fiber
@@ -56,7 +59,7 @@ module Cordis
 
         impl = Impl.new(name, owner, value)
         @root.services[name] = impl
-        owner.store[name] = impl # provider 對自己立即可見
+        owner.store[name] = impl # immediately visible to the provider itself
         owner.provided << name
         @root.notify([name]) if owner.state == :active
         lambda do
@@ -65,7 +68,7 @@ module Cordis
           dependents.each do |dep|
             dep.await
           rescue StandardError
-            nil # allSettled 語意:個別依賴者卸載失敗不阻斷
+            nil # allSettled semantics: one dependent failing to unload never blocks the rest
           end
           owner.store&.delete(name)
           owner.provided.delete(name)
@@ -73,7 +76,8 @@ module Cordis
       end
     end
 
-    # strict:provider fiber 必須 ACTIVE 才可見(async 載入中的 service 對依賴者不可見)。
+    # Strict: the provider fiber must be ACTIVE to be visible (a service whose provider
+    # is still loading is invisible to dependents).
     def get(name)
       impl = @root.services[name.to_sym]
       return nil unless impl && impl.fiber.state == :active
@@ -90,8 +94,9 @@ module Cordis
       impl.value = value
     end
 
-    # 依賴圖更新(全同步):線性掃描所有 fiber,重查滿足狀態並重算 epoch。
-    # 回傳被觸及的 fiber 清單(provide teardown 用它等依賴者卸載)。
+    # Dependency-graph update (fully synchronous): linear scan over all fibers,
+    # re-checking satisfaction and recomputing epochs. Returns the touched fibers
+    # (provide's teardown uses the list to wait for dependents).
     def notify(names)
       touched = []
       @registry.runtimes.each do |runtime|
@@ -107,7 +112,8 @@ module Cordis
       touched
     end
 
-    # service 存取:沿 fiber parent chain 找快照(錯誤訊息對齊上游)。
+    # Service access: walk the fiber parent chain looking at snapshots
+    # (error messages match upstream).
     def method_missing(name, *args, &block)
       return super unless args.empty? && block.nil?
 

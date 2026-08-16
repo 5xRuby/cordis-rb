@@ -15,11 +15,11 @@ RSpec.describe Cordis::Fiber do
         -> { log << :unload }
       end
       tick
-      expect(log).to eq([:load]) # consumer 卡在載入中
+      expect(log).to eq([:load]) # consumer stuck mid-load
 
       disposal = Async { provider.dispose }
       tick
-      expect(log).to eq([:load]) # provider 等 consumer 卸載,不會硬拔
+      expect(log).to eq([:load]) # provider waits for the consumer instead of yanking it
 
       gate.push(nil)
       disposal.wait
@@ -44,8 +44,8 @@ RSpec.describe Cordis::Fiber do
       disposal = Async { provider_a.dispose }
       provider_b = ctx.plugin(->(c, _config) { c.provide(:foo, 'new') })
       provider_b.await
-      gate.push(nil) # 放行第一次載入
-      gate.push(nil) # 放行換 provider 後的 reload
+      gate.push(nil) # release the first load
+      gate.push(nil) # release the reload after the provider swap
       consumer.await
       disposal.wait
       expect(log).to eq([[:load, 'old'], :unload, [:load, 'new']])
@@ -69,7 +69,7 @@ RSpec.describe Cordis::Fiber do
         ctx.emit('custom')
         expect(log).to contain_exactly(:bad_listener, :good)
 
-        bad.dispose # dispose 已 FAILED 的 fiber 不外拋,並清掉殘留 listener
+        bad.dispose # disposing a FAILED fiber never raises, and clears leftover listeners
         log.clear
         ctx.emit('custom')
         expect(log).to eq([:good])

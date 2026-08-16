@@ -3,8 +3,9 @@
 require 'async'
 
 module Cordis
-  # 事件系統(上游 4.0 的 EventsService):listener 註冊本身就是 fiber effect,
-  # fiber 卸載時 listener 自動撤除。emit/bail/waterfall 同步;parallel 需要 reactor。
+  # Event system (upstream 4.0's EventsService): registering a listener is itself a
+  # fiber effect, so listeners are removed automatically when the fiber unloads.
+  # emit/bail/waterfall are synchronous; parallel requires a reactor.
   class Events
     Hook = Struct.new(:ctx, :callback)
 
@@ -31,15 +32,15 @@ module Cordis
       end
     end
 
-    # 同步 fan-out,忽略回傳值,listener 的例外直接外拋(對齊上游)。
+    # Synchronous fan-out; return values ignored; listener exceptions propagate (matches upstream).
     def emit(name, *)
       @hooks[name].dup.each { |hook| hook.callback.call(*) }
       nil
     end
 
-    # 循序呼叫,回傳第一個非 nil/false 的結果。
-    # serial 是 async listener 用的同名語意:Ruby async 是 blocking-style,listener 直接 block 即可,
-    # 所以兩者實作相同。
+    # Sequential calls; returns the first non-nil/false result.
+    # serial is the same semantics named for async listeners: Ruby async is blocking-style,
+    # a listener just blocks, so the two share one implementation.
     def bail(name, *)
       @hooks[name].dup.each do |hook|
         result = hook.callback.call(*)
@@ -49,8 +50,8 @@ module Cordis
     end
     alias serial bail
 
-    # middleware 鏈:每個 listener 多收一個 next(callable);不呼叫 next 鏈就停,
-    # 全部走完才呼叫 fallback block。
+    # Middleware chain: each listener receives an extra next (callable); not calling
+    # next stops the chain; the fallback block runs only when every listener passed through.
     def waterfall(name, *, &fallback)
       chain = @hooks[name].dup
       index = -1
@@ -66,7 +67,8 @@ module Cordis
       step.call(*)
     end
 
-    # 併發呼叫所有 listener,不短路:全部跑完後彙總例外成 AggregateError(需在 Sync/Async 內)。
+    # Call all listeners concurrently without short-circuiting: exceptions are collected
+    # into an AggregateError after everything ran (requires Sync/Async).
     def parallel(name, *)
       parent = Async::Task.current
       tasks = @hooks[name].dup.map do |hook|

@@ -3,9 +3,10 @@
 require 'async'
 
 module Cordis
-  # Fiber(上游 4.0 對 EffectScope 的新名字):plugin 的生命週期單位,
-  # 同時是 revertible effect 的收集器(φ accumulator)。
-  # 注意:刻意與 Ruby core 的 ::Fiber 撞名以對齊上游;Cordis 內部不直接使用 core Fiber。
+  # Fiber (upstream 4.0's new name for EffectScope): the lifecycle unit of a plugin,
+  # and also the collector of revertible effects (the paper's phi accumulator).
+  # Note: the clash with Ruby core's ::Fiber is deliberate, to match upstream naming;
+  # Cordis never uses core Fiber directly.
   class Fiber
     INACTIVE = :__inactive__
 
@@ -19,11 +20,11 @@ module Cordis
       @runtime = runtime
       @disposables = []
       @provided = []
-      @internal_store = {} # 目前被滿足的依賴(name => Impl),持續更新
-      @store = nil         # 載入期間的快照;nil 代表 unloaded
+      @internal_store = {} # currently satisfied dependencies (name => Impl), continuously updated
+      @store = nil         # snapshot taken while loading; nil means unloaded
       @current_epoch = INACTIVE
       @target_epoch = INACTIVE
-      @inertia = nil       # 進行中的 load/unload transition task
+      @inertia = nil       # in-flight load/unload transition task
       @error = nil
       @state = :pending
 
@@ -43,7 +44,7 @@ module Cordis
       runtime.fibers << self
       @ctx.events.emit('internal/plugin', self)
       inject.each_key { |name| check_impl(name) }
-      # plugin 本身就是掛在 parent fiber 上的一個 revertible effect(對齊 fiber.ts:170)
+      # a plugin is itself a revertible effect on the parent fiber (mirrors upstream fiber.ts:170)
       @entry = parent_ctx.fiber.effect('ctx.plugin()') do
         refresh
         -> { terminate }
@@ -59,9 +60,10 @@ module Cordis
       @runtime.name || 'plugin'
     end
 
-    # 套用副作用並收集 inverse。block 回傳:nil(無事)、callable(單一 disposer)、
-    # Array/Enumerator of callables(多步 disposer,反序撤除,對應上游 function* effect)。
-    # setup 中途 raise 時,已收集的 disposer 反序回滾後重拋。
+    # Apply a side effect and collect its inverse. The block returns: nil (nothing),
+    # a callable (single disposer), or an Array/Enumerator of callables (multi-step
+    # disposers, reverted in reverse order — upstream's function* effects).
+    # If setup raises midway, already-collected disposers are rolled back in reverse, then re-raised.
     def effect(label = nil, &block)
       assert_active
       disposers = collect_disposers(block, rollback: true)
@@ -80,7 +82,7 @@ module Cordis
       raise InactiveEffectError, 'cannot create effect on inactive context'
     end
 
-    # 等待進行中的 transition 全部結束(注意 while 不是 if:transition 會鏈)。
+    # Wait for all in-flight transitions to finish (while, not if: transitions chain).
     def await
       while (task = @inertia)
         task.wait
@@ -99,7 +101,8 @@ module Cordis
 
     def restart
       set_epoch(INACTIVE)
-      await # 先等卸載完(不能立刻 refresh:target 設回原 epoch 會把 unload 意圖合併掉)
+      await # wait for the unload first (refreshing right away would set the target back
+      # to the original epoch and coalesce the unload intent away)
       refresh
       await
     end
@@ -109,7 +112,8 @@ module Cordis
       restart
     end
 
-    # -- coeffect 機制(依賴圖更新全同步,只有 load/unload 執行是 async)--
+    # -- coeffect machinery (dependency-graph updates are fully synchronous;
+    #    only load/unload execution is async) --
 
     def check_impl(name)
       impl = @ctx.root.services[name]
@@ -141,7 +145,8 @@ module Cordis
       case result
       when nil then nil
       when Array, Enumerator
-        # 逐步收集(不可先整個展開):中途 raise 時已 yield 的 disposer 才能回滾
+        # collect incrementally (never force the whole enumeration first): if it raises
+        # midway, only disposers yielded so far can be rolled back
         result.each do |disposer|
           validate_disposer(disposer)
           disposers << disposer
@@ -172,18 +177,18 @@ module Cordis
       return if epoch == @target_epoch
 
       @target_epoch = epoch
-      return if @inertia # transition 進行中:只記下意圖,完成時會重查
+      return if @inertia # transition in flight: just record the intent; re-checked on completion
 
       start_transition
     end
 
-    # inertia lock:每個 fiber 同時只有一個 transition task 在跑,
-    # 完成時重查 target epoch,不符就鏈到下一個 transition。
+    # Inertia lock: at most one transition task per fiber at a time; on completion the
+    # target epoch is re-checked and, if it changed, the next transition is chained.
     def start_transition
-      task = Async::Task.current # reactor 外呼叫會 raise(plugin/provide 需在 Sync/Async 內)
+      task = Async::Task.current # raises outside a reactor (plugin/provide require Sync/Async)
       set_state(@current_epoch == INACTIVE ? :loading : :unloading)
       @inertia = task.async do
-        Async::Task.current.yield # 一個 tick 的延後(對應上游 await Promise.resolve())
+        Async::Task.current.yield # defer by one tick (upstream's await Promise.resolve())
         loop do
           if @current_epoch == INACTIVE
             break if @target_epoch == INACTIVE
@@ -203,11 +208,12 @@ module Cordis
     def do_load
       goal = @target_epoch
       @error = nil
-      @store = @internal_store.dup # 快照:載入中的 plugin 看到凍結的依賴視圖
+      @store = @internal_store.dup # snapshot: a loading plugin sees a frozen view of its deps
       set_state(:loading)
       begin
         result = @runtime.callback.call(@ctx, @config) unless root?
-        # ponytail: plugin 回傳值只在 callable 時當 disposer(上游 _execute 較嚴格會 TypeError)
+        # ponytail: a plugin return value only counts as a disposer when callable
+        # (upstream _execute is stricter and raises TypeError)
         @disposables << Entry.new([result], 'plugin:return') if result.respond_to?(:call)
       rescue StandardError => e
         @error = e
@@ -218,7 +224,8 @@ module Cordis
 
     def do_unload
       set_state(:unloading)
-      # ponytail: 嚴格 LIFO 循序撤除、逐個 rescue(上游是 LIFO 啟動 + 併發完成)
+      # ponytail: strict LIFO sequential disposal, each rescued individually
+      # (upstream starts in LIFO order but finishes concurrently)
       until @disposables.empty?
         entry = @disposables.pop
         entry.disposers.reverse_each { |d| safe_call(d) }
@@ -241,18 +248,19 @@ module Cordis
       old = @state
       @state = new_state
       @ctx.events.emit('internal/status', self, old)
-      # 跨越 ACTIVE 邊界時,本 fiber 提供的 service 可見性改變 → 通知依賴者
+      # crossing the ACTIVE boundary changes the visibility of services this fiber
+      # provides -> notify dependents
       crossed = (old == :active) ^ (new_state == :active)
       @ctx.root.notify(@provided.dup) if crossed && !@provided.empty?
     end
 
-    # 由 parent 的 effect disposer 呼叫(或 #dispose 手動觸發)
+    # Called by the parent's effect disposer (or manually via #dispose)
     def terminate
       set_epoch(INACTIVE)
       begin
         await
       rescue StandardError
-        nil # FAILED fiber 的 dispose 不外拋(錯誤已在載入時 warn 過)
+        nil # disposing a FAILED fiber never raises (the error was already warned at load time)
       end
       @uid = nil
       set_state(:disposed)
