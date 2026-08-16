@@ -1,0 +1,11 @@
+AllCops:
+  NewCops: enable
+  SuggestExtensions: false
+
+# 生命週期狀態機與 spec 的 with_reactor block 本來就長,不硬拆
+Metrics:
+  Enabled: false
+
+# set_epoch / set_state 對齊上游 _setEpoch / _updateState 命名
+Naming/AccessorMethodName:
+  Enabled: false
