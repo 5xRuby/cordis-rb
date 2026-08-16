@@ -53,6 +53,7 @@ end
 ```
 bundle install && bundle exec rspec
 bundle exec ruby examples/demo.rb   # lifecycle / coeffect walkthrough
+ruby examples/webapp.rb             # the same story with Sinatra + Falcon + SQLite
 ```
 
 ---
@@ -106,6 +107,7 @@ end
 ```
 bundle install && bundle exec rspec
 bundle exec ruby examples/demo.rb   # 生命週期 / coeffect 導覽
+ruby examples/webapp.rb             # 同一個故事,換成 Sinatra + Falcon + SQLite
 ```
 
 ---
@@ -159,4 +161,5 @@ end
 ```
 bundle install && bundle exec rspec
 bundle exec ruby examples/demo.rb   # ライフサイクル / coeffect ウォークスルー
+ruby examples/webapp.rb             # 同じストーリーを Sinatra + Falcon + SQLite で
 ```
