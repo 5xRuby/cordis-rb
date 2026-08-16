@@ -27,6 +27,7 @@ notebooklm ask "..." --notebook b4683395-8795-47c8-9d7a-76f058954f06
 - **載入延後一個 tick**(對應上游 `await Promise.resolve()`):async 的 child task 是 eager,所以 transition task 開頭 `Async::Task.current.yield`。
 - **inertia lock**:每個 fiber 一個 transition task,loop 到 current epoch == target epoch 為止;transition 中 target 變更只記意圖。`restart` 必須先 `await` 卸載完再 `refresh`,否則 target 設回原 epoch 會把 unload 意圖合併掉(已踩過)。
 - **與上游的刻意差異**(`# ponytail:` 註記):unload 是嚴格 LIFO「循序」撤除(上游是 LIFO 啟動 + 併發完成);plugin 回傳值只在 callable 時收為 disposer(上游 `_execute` 會對非法值 TypeError)。
+- **isolate/intercept(round 3)**:isolate key 預設就是 name 本身(不學上游 `root[isolate][name] ??= Symbol` 的 lazy 建 key),isolated ctx 才在自己的 `@isolate` map 放 token(`Object.new` 或使用者傳的 label);map 是 copy-on-write merge,不用 prototype chain。service store 改以 key 為鍵、`Fiber#provided` 改 `{name => key}`、notify 收 `{name => key}` pairs 並過濾 `fib.ctx.isolate_key(n) == key`。intercept 同樣 copy-on-write,鏈在 `ctx.intercept` 時就地 merge 攤平(上游是 resolveConfig 走 prototype chain 收集再 assign),讀取入口是 `ctx.resolve_config(name, base)`;Hash 形式的 inject config 會轉成 plugin ctx 上的 intercept(對齊 fiber.ts:139)。**比上游嚴格的一處**:service walk 在終點 fiber 對 provided 服務檢查 realm key(上游 name-keyed store 會讓 isolated plugin 走到 root 時漏看到 default realm 的 service)。
 - async 模式參考 `/Users/ryudo/RubyPrjs/lens-ruby-async`:完成訊號用 `Async::Queue` 不用 `Async::Condition`(signal 先於 wait 會遺失)、spec 用 `task.with_timeout` 包可能吊死的流程(spec_helper 的 `with_reactor`)、teardown 逐步各自 rescue。
 
 ## 範圍紀律

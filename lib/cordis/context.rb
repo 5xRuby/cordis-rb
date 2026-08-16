@@ -13,7 +13,9 @@ module Cordis
 
     def initialize
       @root = self
-      @services = {} # name => Impl (no isolate layer, keyed directly by name)
+      @services = {} # isolate key => Impl (default key is the name itself)
+      @isolate = {}  # name => isolation label; absent = the shared default realm
+      @intercept = {} # name => per-caller config (copy-on-write, chain pre-merged)
       @fiber = Fiber.new(self) # root fiber: always active, dispose = restart
       @registry = Registry.new(self)
       @events = Events.new(self)
@@ -25,6 +27,38 @@ module Cordis
       ctx.instance_variable_set(:@fiber, fiber)
       ctx
     end
+
+    # A ctx view where service `name` lives in its own realm: provides/injects through
+    # this view no longer see (or are seen by) the default realm. Pass the same label
+    # to two isolate calls to share one realm between them.
+    def isolate(name, label = nil)
+      ctx = extend
+      ctx.instance_variable_set(:@isolate, @isolate.merge(name.to_sym => label || Object.new))
+      ctx
+    end
+
+    # A ctx view carrying per-caller config for service `name` (upstream ctx.intercept).
+    # Nested intercepts merge, inner overriding outer (Hash configs only; anything else replaces).
+    def intercept(name, config)
+      name = name.to_sym
+      old = @intercept[name]
+      merged = old.is_a?(Hash) && config.is_a?(Hash) ? old.merge(config) : config
+      ctx = extend
+      ctx.instance_variable_set(:@intercept, @intercept.merge(name => merged))
+      ctx
+    end
+
+    # Effective intercept config for `name` as seen from this ctx, merged over `base`
+    # (upstream Service[resolveConfig], minus the Config schema merge).
+    def resolve_config(name, base = nil)
+      config = @intercept[name.to_sym]
+      return base if config.nil?
+
+      base.is_a?(Hash) && config.is_a?(Hash) ? base.merge(config) : config
+    end
+
+    # The store key for `name` in this ctx's realm.
+    def isolate_key(name) = @isolate[name] || name
 
     # -- effect / plugin --
 
@@ -53,18 +87,19 @@ module Cordis
     # (so dependents' disposers can still reach the service during their own teardown).
     def provide(name, value = nil)
       name = name.to_sym
+      key = isolate_key(name)
       owner = @fiber
       @fiber.effect("ctx.provide(#{name.inspect})") do
-        raise ServiceError, "service #{name.inspect} has already been registered" if @root.services.key?(name)
+        raise ServiceError, "service #{name.inspect} has already been registered" if @root.services.key?(key)
 
         impl = Impl.new(name, owner, value)
-        @root.services[name] = impl
+        @root.services[key] = impl
         owner.store[name] = impl # immediately visible to the provider itself
-        owner.provided << name
-        @root.notify([name]) if owner.state == :active
+        owner.provided[name] = key
+        @root.notify({ name => key }) if owner.state == :active
         lambda do
-          @root.services.delete(name)
-          dependents = @root.notify([name])
+          @root.services.delete(key)
+          dependents = @root.notify({ name => key })
           dependents.each do |dep|
             dep.await
           rescue StandardError
@@ -79,7 +114,7 @@ module Cordis
     # Strict: the provider fiber must be ACTIVE to be visible (a service whose provider
     # is still loading is invisible to dependents).
     def get(name)
-      impl = @root.services[name.to_sym]
+      impl = @root.services[isolate_key(name.to_sym)]
       return nil unless impl && impl.fiber.state == :active
 
       impl.value
@@ -87,7 +122,7 @@ module Cordis
 
     def set(name, value)
       name = name.to_sym
-      impl = @root.services[name]
+      impl = @root.services[isolate_key(name)]
       raise ServiceError, %(cannot set property "#{name}" without provide) unless impl
       raise ServiceError, %(cannot set property "#{name}" in multiple fibers) unless impl.fiber.equal?(@fiber)
 
@@ -95,20 +130,22 @@ module Cordis
     end
 
     # Dependency-graph update (fully synchronous): linear scan over all fibers,
-    # re-checking satisfaction and recomputing epochs. Returns the touched fibers
-    # (provide's teardown uses the list to wait for dependents).
-    def notify(names)
+    # re-checking satisfaction and recomputing epochs. Only fibers whose ctx resolves
+    # the name to the same isolate key are touched. Takes { name => key } pairs and
+    # returns the touched fibers (provide's teardown uses the list to wait for dependents).
+    def notify(pairs)
       touched = []
       @registry.runtimes.each do |runtime|
         runtime.fibers.each do |fib|
-          next unless names.any? { |n| fib.inject.key?(n) }
+          hits = pairs.select { |n, key| fib.inject.key?(n) && fib.ctx.isolate_key(n) == key }
+          next if hits.empty?
 
-          names.each { |n| fib.check_impl(n) if fib.inject.key?(n) }
+          hits.each_key { |n| fib.check_impl(n) }
           fib.refresh
           touched << fib
         end
       end
-      names.each { |n| @events.emit('internal/service', n) }
+      pairs.each_key { |n| @events.emit('internal/service', n) }
       touched
     end
 
@@ -121,20 +158,26 @@ module Cordis
     end
 
     def respond_to_missing?(name, include_private = false)
-      @root.services.key?(name) || super
+      @root.services.key?(isolate_key(name)) || super
     end
 
     private
 
     def resolve_service(name)
+      key = isolate_key(name)
       fib = @fiber
       loop do
         if fib.store
           impl = fib.store[name]
-          return impl.value if impl
+          # a service this fiber *provides* is only visible from the same realm
+          # (stricter than upstream, whose walk is name-keyed at the terminal fiber)
+          return impl.value if impl && (!fib.provided.key?(name) || fib.provided[name] == key)
         end
         raise ServiceError, %(cannot get required service "#{name}" in inactive context) if fib.inject.key?(name)
-        raise ServiceError, %(cannot get property "#{name}" without inject) if fib.root?
+        # stop at root, or when walking up would cross an isolation boundary
+        if fib.root? || fib.parent_ctx.isolate_key(name) != key
+          raise ServiceError, %(cannot get property "#{name}" without inject)
+        end
 
         fib = fib.parent_fiber
       end
