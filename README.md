@@ -12,26 +12,41 @@ cordis-rb is a Ruby reimplementation of the core mechanisms of [Cordis](https://
 
 ### What's here so far
 
-- **Context tree** — parent/child scopes via `ctx.extend`
-- **Revertible effects** — `ctx.effect` applies a side effect and registers its inverse; `ctx.dispose` reverts the whole subtree in strict LIFO order (Theorem 16 of the paper: strict LIFO suffices to correctly revert non-commutative effects within a component)
+Aligned with upstream `packages/core` (4.0 naming: `Fiber`, formerly `EffectScope`):
+
+- **Revertible effects** — `ctx.effect` applies a side effect and registers its inverse (single or multi-step); disposal is strict LIFO (Theorem 16)
+- **Plugin system** — `ctx.plugin` applies a plugin *as a revertible effect* on the parent fiber, so the whole plugin tree is one nested effect tree; loading is deferred one tick, load/unload transitions are serialized per fiber (inertia lock)
+- **Reactive coeffects** — `ctx.provide` / `ctx.inject`: consumers load when their dependencies are satisfied, reload when a provider is swapped, and are torn down *before* their provider finishes unloading
+- **Events** — `ctx.on` / `once` / `emit` / `bail` / `waterfall` (sync) and `ctx.parallel` / `serial` (async); listeners are effects, removed automatically on fiber disposal
 
 ```ruby
 ctx = Cordis::Context.new
 
-ctx.effect do
-  server.listen(8080)
-  -> { server.close }   # return the inverse
-end
+Sync do
+  provider = ctx.plugin(lambda { |c, _config|
+    db = Database.connect
+    c.effect { -> { db.close } } # registered before provide → runs after all dependents are gone
+    c.provide(:db, db)
+  })
 
-child = ctx.extend      # child scope
-ctx.dispose             # reverts the whole tree, LIFO
+  ctx.inject([:db]) do |c, _config|
+    c.on('request') { |req| c.db.query(req) } # loads only once :db is active
+  end
+
+  provider.await   # wait for the deferred load
+  provider.dispose # dependents tear down first, then the provider, LIFO
+end
 ```
 
 ### Roadmap
 
-- [ ] Reactive coeffects — service injection with activating/deactivating notifications (this is where `async` comes in)
-- [ ] Event system (`ctx.on`)
-- [ ] Waterfall event chains, hot-reload reconciliation — maybe, later
+- [x] Revertible effects with LIFO disposal
+- [x] Plugin/fiber lifecycle (epoch + inertia state machine, via `async`)
+- [x] Reactive coeffects (`ctx.provide` / `ctx.inject`)
+- [x] Event system (`ctx.on`, waterfall included)
+- [ ] Isolation & intercept (`ctx.isolate` / `ctx.intercept`)
+- [ ] `Cordis::Service` base class
+- [ ] Loader / hot-reload reconciliation — maybe, later
 
 ### Development
 
@@ -49,26 +64,41 @@ cordis-rb 用 Ruby 重新實作 [Cordis](https://github.com/cordiverse/cordis)(T
 
 ### 目前完成
 
-- **Context tree** — `ctx.extend` 建立 parent/child scope
-- **Revertible effect** — `ctx.effect` 套用副作用並登記 inverse;`ctx.dispose` 以嚴格 LIFO 順序撤除整棵子樹(論文 Theorem 16:單一 component 內嚴格 LIFO 即可正確復原 non-commutative 效果)
+對接上游 `packages/core`(4.0 命名:`Fiber`,即原本的 `EffectScope`):
+
+- **Revertible effect** — `ctx.effect` 套用副作用並登記 inverse(單步或多步);撤除嚴格 LIFO(Theorem 16)
+- **Plugin 系統** — `ctx.plugin` 把 plugin *當成一個 revertible effect* 掛在 parent fiber 上,整棵 plugin tree 就是巢狀 effect tree;載入延後一個 tick,每個 fiber 的 load/unload 由 inertia lock 序列化
+- **Reactive coeffect** — `ctx.provide` / `ctx.inject`:依賴滿足才載入、provider 被換掉就 reload、provider 卸載前依賴者先 teardown
+- **事件系統** — `ctx.on` / `once` / `emit` / `bail` / `waterfall`(同步)與 `ctx.parallel` / `serial`(非同步);listener 就是 effect,fiber 卸載時自動移除
 
 ```ruby
 ctx = Cordis::Context.new
 
-ctx.effect do
-  server.listen(8080)
-  -> { server.close }   # 回傳 inverse
-end
+Sync do
+  provider = ctx.plugin(lambda { |c, _config|
+    db = Database.connect
+    c.effect { -> { db.close } } # 註冊在 provide 之前 → 所有依賴者卸載後才執行
+    c.provide(:db, db)
+  })
 
-child = ctx.extend      # 子 scope
-ctx.dispose             # LIFO 撤除整棵樹
+  ctx.inject([:db]) do |c, _config|
+    c.on('request') { |req| c.db.query(req) } # :db active 之後才載入
+  end
+
+  provider.await   # 等延後的載入完成
+  provider.dispose # 依賴者先卸載,再撤 provider,LIFO
+end
 ```
 
 ### Roadmap
 
-- [ ] Reactive coeffect — service injection 與 activating/deactivating 通知(`async` 從這裡開始登場)
-- [ ] 事件系統(`ctx.on`)
-- [ ] Waterfall 事件鏈、hot-reload reconciliation — 骨架穩了再說
+- [x] Revertible effect 與 LIFO 撤除
+- [x] Plugin/fiber 生命週期(epoch + inertia 狀態機,基於 `async`)
+- [x] Reactive coeffect(`ctx.provide` / `ctx.inject`)
+- [x] 事件系統(`ctx.on`,含 waterfall)
+- [ ] Isolation 與 intercept(`ctx.isolate` / `ctx.intercept`)
+- [ ] `Cordis::Service` base class
+- [ ] Loader / hot-reload reconciliation — 骨架穩了再說
 
 ### 開發
 
@@ -86,26 +116,41 @@ cordis-rb は、[Cordis](https://github.com/cordiverse/cordis)(TypeScript 製の
 
 ### 現状
 
-- **Context tree** — `ctx.extend` による parent/child スコープ
-- **Revertible effect** — `ctx.effect` が副作用を適用して inverse を登録し、`ctx.dispose` がサブツリー全体を厳密な LIFO 順で巻き戻す(論文の Theorem 16:単一 component 内では厳密な LIFO だけで non-commutative な効果を正しく復元できる)
+上流 `packages/core` に整合(4.0 命名:`Fiber`、旧 `EffectScope`):
+
+- **Revertible effect** — `ctx.effect` が副作用を適用して inverse を登録(単段・多段);巻き戻しは厳密な LIFO(Theorem 16)
+- **Plugin システム** — `ctx.plugin` は plugin を *revertible effect として* parent fiber に掛けるため、plugin ツリー全体が入れ子の effect ツリーになる;ロードは 1 tick 遅延、fiber ごとの load/unload は inertia lock で直列化
+- **Reactive coeffect** — `ctx.provide` / `ctx.inject`:依存が満たされたらロード、provider が入れ替われば reload、provider のアンロード前に依存側が先に teardown
+- **イベントシステム** — `ctx.on` / `once` / `emit` / `bail` / `waterfall`(同期)と `ctx.parallel` / `serial`(非同期);listener は effect であり、fiber の破棄時に自動で外れる
 
 ```ruby
 ctx = Cordis::Context.new
 
-ctx.effect do
-  server.listen(8080)
-  -> { server.close }   # inverse を返す
-end
+Sync do
+  provider = ctx.plugin(lambda { |c, _config|
+    db = Database.connect
+    c.effect { -> { db.close } } # provide より先に登録 → 依存側が全て消えた後に実行
+    c.provide(:db, db)
+  })
 
-child = ctx.extend      # 子スコープ
-ctx.dispose             # ツリー全体を LIFO で巻き戻す
+  ctx.inject([:db]) do |c, _config|
+    c.on('request') { |req| c.db.query(req) } # :db が active になってからロード
+  end
+
+  provider.await   # 遅延ロードの完了を待つ
+  provider.dispose # 依存側が先に teardown、その後 provider、LIFO
+end
 ```
 
 ### Roadmap
 
-- [ ] Reactive coeffect — service injection と activating/deactivating 通知(ここから `async` の出番)
-- [ ] イベントシステム(`ctx.on`)
-- [ ] Waterfall イベントチェーン、hot-reload reconciliation — 骨格が安定してから
+- [x] Revertible effect と LIFO 巻き戻し
+- [x] Plugin/fiber ライフサイクル(epoch + inertia ステートマシン、`async` ベース)
+- [x] Reactive coeffect(`ctx.provide` / `ctx.inject`)
+- [x] イベントシステム(`ctx.on`、waterfall 含む)
+- [ ] Isolation と intercept(`ctx.isolate` / `ctx.intercept`)
+- [ ] `Cordis::Service` base class
+- [ ] Loader / hot-reload reconciliation — 骨格が安定してから
 
 ### 開発
 
