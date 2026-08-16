@@ -27,6 +27,20 @@ def banner(text)
   puts "== #{text}"
 end
 
+# Class-style plugin: the instance itself becomes the :audit service.
+class AuditLog < Cordis::Service
+  provide :audit
+
+  def init = puts '   [audit] ready'
+
+  # no traceable proxies in cordis-rb: callers pass their ctx so per-caller
+  # intercept config can be resolved explicitly
+  def record(caller_ctx, message)
+    level = caller_ctx.resolve_config(:audit, { level: 'info' })[:level]
+    puts "   [audit] #{level}: #{message}"
+  end
+end
+
 ctx = Cordis::Context.new
 
 database = lambda do |c, config|
@@ -85,6 +99,13 @@ Sync do
   bob_db.dispose
   puts "   bob web: #{bob_web.state}, alice web: #{alice_web.state}"
   ctx.emit('request', '/dashboard')
+
+  banner 'Service class: provides itself; intercept carries per-caller config'
+  ctx.plugin(AuditLog).await
+  ctx.inject([:audit]) { |c, _config| c.audit.record(c, 'plain caller') }
+  verbose = ctx.intercept(:audit, { level: 'debug' })
+  verbose.inject([:audit]) { |c, _config| c.audit.record(c, 'verbose caller') }
+  tick
 
   banner 'root dispose: the whole tree unwinds in LIFO order'
   ctx.fiber.dispose

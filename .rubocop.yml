@@ -9,3 +9,8 @@ Metrics:
 # set_epoch / set_state 對齊上游 _setEpoch / _updateState 命名
 Naming/AccessorMethodName:
   Enabled: false
+
+# demo 腳本本來就會定義多個示範用 class
+Style/OneClassPerFile:
+  Exclude:
+    - examples/**/*

@@ -19,6 +19,7 @@ Aligned with upstream `packages/core` (4.0 naming: `Fiber`, formerly `EffectScop
 - **Reactive coeffects** — `ctx.provide` / `ctx.inject`: consumers load when their dependencies are satisfied, reload when a provider is swapped, and are torn down *before* their provider finishes unloading
 - **Events** — `ctx.on` / `once` / `emit` / `bail` / `waterfall` (sync) and `ctx.parallel` / `serial` (async); listeners are effects, removed automatically on fiber disposal
 - **Isolation & intercept** — `ctx.isolate` puts a service name in its own realm (provides/injects no longer cross the boundary; share a realm by passing the same label); `ctx.intercept` / Hash inject configs carry per-caller config, resolved with `ctx.resolve_config`
+- **Service base class** — subclass `Cordis::Service`, declare `provide :name` (+ optional `inject`), and pass the class to `ctx.plugin`: the instance provides itself, and `#init` runs as the load body (blocking there keeps the service invisible to dependents — pending inject)
 
 ```ruby
 ctx = Cordis::Context.new
@@ -46,7 +47,7 @@ end
 - [x] Reactive coeffects (`ctx.provide` / `ctx.inject`)
 - [x] Event system (`ctx.on`, waterfall included)
 - [x] Isolation & intercept (`ctx.isolate` / `ctx.intercept`)
-- [ ] `Cordis::Service` base class
+- [x] `Cordis::Service` base class
 - [ ] Loader / hot-reload reconciliation — maybe, later
 
 ### Development
@@ -74,6 +75,7 @@ cordis-rb 用 Ruby 重新實作 [Cordis](https://github.com/cordiverse/cordis)(T
 - **Reactive coeffect** — `ctx.provide` / `ctx.inject`:依賴滿足才載入、provider 被換掉就 reload、provider 卸載前依賴者先 teardown
 - **事件系統** — `ctx.on` / `once` / `emit` / `bail` / `waterfall`(同步)與 `ctx.parallel` / `serial`(非同步);listener 就是 effect,fiber 卸載時自動移除
 - **Isolation 與 intercept** — `ctx.isolate` 讓某個 service name 進入獨立 realm(provide/inject 不再跨界;傳同一個 label 可共用 realm);`ctx.intercept` 與 Hash 形式的 inject config 攜帶 per-caller 設定,用 `ctx.resolve_config` 解析
+- **Service base class** — 繼承 `Cordis::Service`、宣告 `provide :name`(可加 `inject`),把 class 直接丟給 `ctx.plugin`:instance 會 provide 自己,`#init` 就是載入本體(在裡面 block 住,service 對依賴者就不可見 —— pending inject)
 
 ```ruby
 ctx = Cordis::Context.new
@@ -101,7 +103,7 @@ end
 - [x] Reactive coeffect(`ctx.provide` / `ctx.inject`)
 - [x] 事件系統(`ctx.on`,含 waterfall)
 - [x] Isolation 與 intercept(`ctx.isolate` / `ctx.intercept`)
-- [ ] `Cordis::Service` base class
+- [x] `Cordis::Service` base class
 - [ ] Loader / hot-reload reconciliation — 骨架穩了再說
 
 ### 開發
@@ -129,6 +131,7 @@ cordis-rb は、[Cordis](https://github.com/cordiverse/cordis)(TypeScript 製の
 - **Reactive coeffect** — `ctx.provide` / `ctx.inject`:依存が満たされたらロード、provider が入れ替われば reload、provider のアンロード前に依存側が先に teardown
 - **イベントシステム** — `ctx.on` / `once` / `emit` / `bail` / `waterfall`(同期)と `ctx.parallel` / `serial`(非同期);listener は effect であり、fiber の破棄時に自動で外れる
 - **Isolation と intercept** — `ctx.isolate` は service name を独立した realm に隔離(provide/inject は境界を越えない;同じ label を渡せば realm を共有);`ctx.intercept` と Hash 形式の inject config は per-caller 設定を運び、`ctx.resolve_config` で解決
+- **Service base class** — `Cordis::Service` を継承し `provide :name`(必要なら `inject` も)を宣言、class をそのまま `ctx.plugin` に渡す:instance が自身を provide し、`#init` がロード本体になる(そこで block すれば service は依存側から不可視のまま —— pending inject)
 
 ```ruby
 ctx = Cordis::Context.new
@@ -156,7 +159,7 @@ end
 - [x] Reactive coeffect(`ctx.provide` / `ctx.inject`)
 - [x] イベントシステム(`ctx.on`、waterfall 含む)
 - [x] Isolation と intercept(`ctx.isolate` / `ctx.intercept`)
-- [ ] `Cordis::Service` base class
+- [x] `Cordis::Service` base class
 - [ ] Loader / hot-reload reconciliation — 骨格が安定してから
 
 ### 開発
