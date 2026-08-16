@@ -68,6 +68,24 @@ Sync do
   db_fiber.dispose
   puts "   web state: #{web_fiber.state} (back to pending, waiting for the next provider)"
 
+  banner 'isolate(:db): two tenants, same plugin code, separate realms'
+  alice = ctx.isolate(:db)
+  bob = ctx.isolate(:db)
+  alice_web = alice.plugin(web)
+  bob_web = bob.plugin(web)
+  alice.plugin(database, { name: 'alice-db' }).await
+  tick
+  puts "   alice web: #{alice_web.state}, bob web: #{bob_web.state} (bob's realm has no :db yet)"
+  bob_db = bob.plugin(database, { name: 'bob-db' })
+  bob_db.await
+  tick
+  ctx.emit('request', '/dashboard') # both tenants answer, each with its own db
+
+  banner 'dispose(bob db): only bob\'s realm tears down'
+  bob_db.dispose
+  puts "   bob web: #{bob_web.state}, alice web: #{alice_web.state}"
+  ctx.emit('request', '/dashboard')
+
   banner 'root dispose: the whole tree unwinds in LIFO order'
   ctx.fiber.dispose
   puts "   registry size: #{ctx.registry.size}"

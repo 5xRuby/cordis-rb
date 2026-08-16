@@ -18,6 +18,7 @@ Aligned with upstream `packages/core` (4.0 naming: `Fiber`, formerly `EffectScop
 - **Plugin system** — `ctx.plugin` applies a plugin *as a revertible effect* on the parent fiber, so the whole plugin tree is one nested effect tree; loading is deferred one tick, load/unload transitions are serialized per fiber (inertia lock)
 - **Reactive coeffects** — `ctx.provide` / `ctx.inject`: consumers load when their dependencies are satisfied, reload when a provider is swapped, and are torn down *before* their provider finishes unloading
 - **Events** — `ctx.on` / `once` / `emit` / `bail` / `waterfall` (sync) and `ctx.parallel` / `serial` (async); listeners are effects, removed automatically on fiber disposal
+- **Isolation & intercept** — `ctx.isolate` puts a service name in its own realm (provides/injects no longer cross the boundary; share a realm by passing the same label); `ctx.intercept` / Hash inject configs carry per-caller config, resolved with `ctx.resolve_config`
 
 ```ruby
 ctx = Cordis::Context.new
@@ -44,7 +45,7 @@ end
 - [x] Plugin/fiber lifecycle (epoch + inertia state machine, via `async`)
 - [x] Reactive coeffects (`ctx.provide` / `ctx.inject`)
 - [x] Event system (`ctx.on`, waterfall included)
-- [ ] Isolation & intercept (`ctx.isolate` / `ctx.intercept`)
+- [x] Isolation & intercept (`ctx.isolate` / `ctx.intercept`)
 - [ ] `Cordis::Service` base class
 - [ ] Loader / hot-reload reconciliation — maybe, later
 
@@ -72,6 +73,7 @@ cordis-rb 用 Ruby 重新實作 [Cordis](https://github.com/cordiverse/cordis)(T
 - **Plugin 系統** — `ctx.plugin` 把 plugin *當成一個 revertible effect* 掛在 parent fiber 上,整棵 plugin tree 就是巢狀 effect tree;載入延後一個 tick,每個 fiber 的 load/unload 由 inertia lock 序列化
 - **Reactive coeffect** — `ctx.provide` / `ctx.inject`:依賴滿足才載入、provider 被換掉就 reload、provider 卸載前依賴者先 teardown
 - **事件系統** — `ctx.on` / `once` / `emit` / `bail` / `waterfall`(同步)與 `ctx.parallel` / `serial`(非同步);listener 就是 effect,fiber 卸載時自動移除
+- **Isolation 與 intercept** — `ctx.isolate` 讓某個 service name 進入獨立 realm(provide/inject 不再跨界;傳同一個 label 可共用 realm);`ctx.intercept` 與 Hash 形式的 inject config 攜帶 per-caller 設定,用 `ctx.resolve_config` 解析
 
 ```ruby
 ctx = Cordis::Context.new
@@ -98,7 +100,7 @@ end
 - [x] Plugin/fiber 生命週期(epoch + inertia 狀態機,基於 `async`)
 - [x] Reactive coeffect(`ctx.provide` / `ctx.inject`)
 - [x] 事件系統(`ctx.on`,含 waterfall)
-- [ ] Isolation 與 intercept(`ctx.isolate` / `ctx.intercept`)
+- [x] Isolation 與 intercept(`ctx.isolate` / `ctx.intercept`)
 - [ ] `Cordis::Service` base class
 - [ ] Loader / hot-reload reconciliation — 骨架穩了再說
 
@@ -126,6 +128,7 @@ cordis-rb は、[Cordis](https://github.com/cordiverse/cordis)(TypeScript 製の
 - **Plugin システム** — `ctx.plugin` は plugin を *revertible effect として* parent fiber に掛けるため、plugin ツリー全体が入れ子の effect ツリーになる;ロードは 1 tick 遅延、fiber ごとの load/unload は inertia lock で直列化
 - **Reactive coeffect** — `ctx.provide` / `ctx.inject`:依存が満たされたらロード、provider が入れ替われば reload、provider のアンロード前に依存側が先に teardown
 - **イベントシステム** — `ctx.on` / `once` / `emit` / `bail` / `waterfall`(同期)と `ctx.parallel` / `serial`(非同期);listener は effect であり、fiber の破棄時に自動で外れる
+- **Isolation と intercept** — `ctx.isolate` は service name を独立した realm に隔離(provide/inject は境界を越えない;同じ label を渡せば realm を共有);`ctx.intercept` と Hash 形式の inject config は per-caller 設定を運び、`ctx.resolve_config` で解決
 
 ```ruby
 ctx = Cordis::Context.new
@@ -152,7 +155,7 @@ end
 - [x] Plugin/fiber ライフサイクル(epoch + inertia ステートマシン、`async` ベース)
 - [x] Reactive coeffect(`ctx.provide` / `ctx.inject`)
 - [x] イベントシステム(`ctx.on`、waterfall 含む)
-- [ ] Isolation と intercept(`ctx.isolate` / `ctx.intercept`)
+- [x] Isolation と intercept(`ctx.isolate` / `ctx.intercept`)
 - [ ] `Cordis::Service` base class
 - [ ] Loader / hot-reload reconciliation — 骨格が安定してから
 

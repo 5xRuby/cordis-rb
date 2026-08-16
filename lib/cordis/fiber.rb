@@ -12,14 +12,15 @@ module Cordis
 
     Entry = Struct.new(:disposers, :label)
 
-    attr_reader :uid, :ctx, :runtime, :inject, :store, :config, :error, :provided, :parent_fiber, :state
+    attr_reader :uid, :ctx, :runtime, :inject, :store, :config, :error, :provided, :parent_fiber, :parent_ctx,
+                :state
 
     def initialize(parent_ctx, config: nil, inject: {}, runtime: nil)
       @config = config
       @inject = inject
       @runtime = runtime
       @disposables = []
-      @provided = []
+      @provided = {} # name => isolate key (for boundary-crossing notify on state change)
       @internal_store = {} # currently satisfied dependencies (name => Impl), continuously updated
       @store = nil         # snapshot taken while loading; nil means unloaded
       @current_epoch = INACTIVE
@@ -40,7 +41,11 @@ module Cordis
 
       @uid = parent_ctx.root.registry.next_uid
       @parent_fiber = parent_ctx.fiber
+      @parent_ctx = parent_ctx
       @ctx = parent_ctx.extend(fiber: self)
+      # inject with a Hash config doubles as an intercept entry on the plugin's ctx
+      # (mirrors upstream fiber.ts:139)
+      inject.each { |dep, cfg| @ctx = @ctx.intercept(dep, cfg) if cfg.is_a?(Hash) }
       runtime.fibers << self
       @ctx.events.emit('internal/plugin', self)
       inject.each_key { |name| check_impl(name) }
@@ -116,7 +121,7 @@ module Cordis
     #    only load/unload execution is async) --
 
     def check_impl(name)
-      impl = @ctx.root.services[name]
+      impl = @ctx.root.services[@ctx.isolate_key(name)]
       if impl && impl.fiber.state == :active
         @internal_store[name] = impl
       else
