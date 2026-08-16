@@ -52,6 +52,7 @@ end
 
 ```
 bundle install && bundle exec rspec
+bundle exec ruby examples/demo.rb   # lifecycle / coeffect walkthrough
 ```
 
 ---
@@ -104,6 +105,7 @@ end
 
 ```
 bundle install && bundle exec rspec
+bundle exec ruby examples/demo.rb   # 生命週期 / coeffect 導覽
 ```
 
 ---
@@ -156,4 +158,5 @@ end
 
 ```
 bundle install && bundle exec rspec
+bundle exec ruby examples/demo.rb   # ライフサイクル / coeffect ウォークスルー
 ```
