@@ -20,6 +20,7 @@ module Cordis
   end
 end
 
+require_relative 'cordis/version'
 require_relative 'cordis/fiber'
 require_relative 'cordis/registry'
 require_relative 'cordis/events'

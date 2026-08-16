@@ -50,6 +50,12 @@ end
 - [x] `Cordis::Service` base class
 - [ ] Loader / hot-reload reconciliation — maybe, later
 
+### Installation
+
+```ruby
+gem 'cordis', github: '5xRuby/cordis-rb' # not yet published to rubygems.org
+```
+
 ### Development
 
 ```
@@ -57,6 +63,10 @@ bundle install && bundle exec rspec
 bundle exec ruby examples/demo.rb   # lifecycle / coeffect walkthrough
 ruby examples/webapp.rb             # the same story with Sinatra + Falcon + SQLite
 ```
+
+### License
+
+[Apache-2.0](LICENSE)
 
 ---
 
@@ -106,6 +116,12 @@ end
 - [x] `Cordis::Service` base class
 - [ ] Loader / hot-reload reconciliation — 骨架穩了再說
 
+### 安裝
+
+```ruby
+gem 'cordis', github: '5xRuby/cordis-rb' # 尚未發佈到 rubygems.org
+```
+
 ### 開發
 
 ```
@@ -113,6 +129,10 @@ bundle install && bundle exec rspec
 bundle exec ruby examples/demo.rb   # 生命週期 / coeffect 導覽
 ruby examples/webapp.rb             # 同一個故事,換成 Sinatra + Falcon + SQLite
 ```
+
+### 授權
+
+[Apache-2.0](LICENSE)
 
 ---
 
@@ -162,6 +182,12 @@ end
 - [x] `Cordis::Service` base class
 - [ ] Loader / hot-reload reconciliation — 骨格が安定してから
 
+### インストール
+
+```ruby
+gem 'cordis', github: '5xRuby/cordis-rb' # rubygems.org には未公開
+```
+
 ### 開発
 
 ```
@@ -169,3 +195,7 @@ bundle install && bundle exec rspec
 bundle exec ruby examples/demo.rb   # ライフサイクル / coeffect ウォークスルー
 ruby examples/webapp.rb             # 同じストーリーを Sinatra + Falcon + SQLite で
 ```
+
+### ライセンス
+
+[Apache-2.0](LICENSE)
